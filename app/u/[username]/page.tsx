@@ -2,10 +2,22 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 
 // ──────────────────────────────────────────────────────────────
-// Types
+// Types (unchanged)
 // ──────────────────────────────────────────────────────────────
 
 type Lang = { name: string; color: string };
@@ -83,6 +95,99 @@ type Stats = {
   rateLimit: { limit: number; remaining: number; resetAt: string };
 };
 
+const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+// ──────────────────────────────────────────────────────────────
+// Monochrome theme tokens
+// ──────────────────────────────────────────────────────────────
+
+const ACCENT = "#d4ff00";
+const SERIF = { fontFamily: "var(--font-serif)" } as const;
+// zero → faint → mid → near-accent → accent
+const HEAT = ["#161616", "#2a2a2a", "#4a4a4a", "#a8d000", "#d4ff00"];
+// monochrome-friendly mix palette (lime → grey ramp)
+const MIX_COLORS = ["#d4ff00", "#8a8a8a", "#555555", "#2a2a2a"];
+
+// ──────────────────────────────────────────────────────────────
+// Derived insight helpers (unchanged logic)
+// ──────────────────────────────────────────────────────────────
+
+function computeStreaks(weeks: Week[]) {
+  const days = weeks.flatMap((w) => w.contributionDays);
+  let longest = 0;
+  let run = 0;
+  for (const d of days) {
+    if (d.contributionCount > 0) {
+      run++;
+      longest = Math.max(longest, run);
+    } else {
+      run = 0;
+    }
+  }
+  let current = 0;
+  let started = false;
+  for (let i = days.length - 1; i >= 0; i--) {
+    if (days[i].contributionCount > 0) {
+      current++;
+      started = true;
+    } else {
+      if (!started && i === days.length - 1) continue;
+      break;
+    }
+  }
+  return { current, longest };
+}
+
+function computeWeekdayPattern(weeks: Week[]) {
+  const totals = [0, 0, 0, 0, 0, 0, 0];
+  for (const w of weeks) for (const d of w.contributionDays) totals[d.weekday] += d.contributionCount;
+  return WEEKDAY_LABELS.map((day, i) => ({ day, count: totals[i] }));
+}
+
+function computeConsistency(weeks: Week[]) {
+  let active = 0;
+  let total = 0;
+  for (const w of weeks)
+    for (const d of w.contributionDays) {
+      total++;
+      if (d.contributionCount > 0) active++;
+    }
+  return total ? (active / total) * 100 : 0;
+}
+
+function computeMostActiveMonth(weeks: Week[]) {
+  const monthTotals = new Map<string, number>();
+  for (const w of weeks)
+    for (const d of w.contributionDays) {
+      const m = d.date.slice(0, 7);
+      monthTotals.set(m, (monthTotals.get(m) ?? 0) + d.contributionCount);
+    }
+  let best: [string, number] = ["", 0];
+  for (const entry of monthTotals.entries()) if (entry[1] > best[1]) best = entry;
+  if (!best[0]) return null;
+  const [y, m] = best[0].split("-");
+  const dt = new Date(Number(y), Number(m) - 1, 1);
+  return { label: dt.toLocaleString("en-US", { month: "short", year: "numeric" }), count: best[1] };
+}
+
+function computeMix(cc: Stats["user"]["contributionsCollection"]) {
+  const rows = [
+    { name: "Commits", count: cc.totalCommitContributions },
+    { name: "Pull requests", count: cc.totalPullRequestContributions },
+    { name: "Issues", count: cc.totalIssueContributions },
+    { name: "Reviews", count: cc.totalPullRequestReviewContributions },
+  ];
+  const total = rows.reduce((s, r) => s + r.count, 0);
+  return {
+    total,
+    rows: rows.map((r, i) => ({
+      ...r,
+      color: MIX_COLORS[i % MIX_COLORS.length],
+      percent: total ? (r.count / total) * 100 : 0,
+    })),
+  };
+}
+
 // ──────────────────────────────────────────────────────────────
 // Page
 // ──────────────────────────────────────────────────────────────
@@ -124,215 +229,575 @@ export default function StatsPage() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-500 flex items-center justify-center">
-        <div className="text-sm">Loading {params.username}…</div>
-      </main>
+      <Shell>
+        <div className="min-h-[60vh] flex items-center justify-center gap-2 text-[#8a8a8a] text-sm">
+          <Spinner />
+          Loading {params.username}…
+        </div>
+      </Shell>
     );
   }
 
   if (error) {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col items-center justify-center gap-4 p-6">
-        <div className="text-zinc-400">{error}</div>
-        <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300">
-          ← try another
-        </Link>
-      </main>
+      <Shell>
+        <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+          <div className="text-[#ededed] text-sm">{error}</div>
+          <Link href="/" className="text-sm text-[#8a8a8a] hover:text-[#ededed] transition-colors">
+            ← try another
+          </Link>
+        </div>
+      </Shell>
     );
   }
 
   if (!data) return null;
 
-  const u = data.user;
-  const cc = u.contributionsCollection;
-  const cal = cc.contributionCalendar;
-
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100">
-      <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-10">
-        <Link href="/" className="text-sm text-zinc-500 hover:text-zinc-300 w-fit">
-          ← back
-        </Link>
+    <Shell>
+      <Dashboard data={data} />
+    </Shell>
+  );
+}
 
-        <ProfileHeader u={u} />
-        <StatsGrid u={u} />
-        <HeatmapSection cal={cal} />
+function Spinner() {
+  return (
+    <svg className="animate-spin" width="14" height="14" viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="10" stroke="#1c1c1c" strokeWidth="3" />
+      <path d="M12 2a10 10 0 0 1 10 10" stroke={ACCENT} strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
 
-        <div className="grid md:grid-cols-2 gap-6">
-          <TopRepos cc={cc} />
-          <LanguagesPanel repos={u.repositories.nodes} />
-        </div>
+// ──────────────────────────────────────────────────────────────
+// Shell — flat #0a0a0a canvas, no aurora/blur
+// ──────────────────────────────────────────────────────────────
 
-        {u.pinnedItems.nodes.length > 0 && <PinnedRepos pins={u.pinnedItems.nodes} />}
-
-        <div className="text-xs text-zinc-600 pt-4 border-t border-zinc-900">
-          API rate limit: {data.rateLimit.remaining}/{data.rateLimit.limit} remaining
-        </div>
-      </div>
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="min-h-screen bg-[#0a0a0a] text-[#ededed]">
+      <div className="max-w-7xl mx-auto px-8 py-12">{children}</div>
     </main>
   );
 }
 
 // ──────────────────────────────────────────────────────────────
-// Components
+// Primitives
 // ──────────────────────────────────────────────────────────────
 
-function ProfileHeader({ u }: { u: Stats["user"] }) {
+function SectionLabel({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`text-[10px] uppercase tracking-[0.18em] text-[#555555] ${className}`}>
+      {children}
+    </div>
+  );
+}
+
+function Section({
+  label,
+  children,
+  className = "",
+}: {
+  label?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`py-12 border-t border-[#1c1c1c] ${className}`}>
+      {label && <SectionLabel className="mb-6">{label}</SectionLabel>}
+      {children}
+    </section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Dashboard
+// ──────────────────────────────────────────────────────────────
+
+function Dashboard({ data }: { data: Stats }) {
+  const u = data.user;
+  const cc = u.contributionsCollection;
+  const cal = cc.contributionCalendar;
+
+  const { current: currentStreak, longest: longestStreak } = useMemo(
+    () => computeStreaks(cal.weeks),
+    [cal.weeks]
+  );
+  const consistency = useMemo(() => computeConsistency(cal.weeks), [cal.weeks]);
+  const weekdayPattern = useMemo(() => computeWeekdayPattern(cal.weeks), [cal.weeks]);
+  const mostActiveMonth = useMemo(() => computeMostActiveMonth(cal.weeks), [cal.weeks]);
+  const mostActiveWeekday = useMemo(() => {
+    let best = weekdayPattern[0];
+    for (const w of weekdayPattern) if (w.count > best.count) best = w;
+    return best;
+  }, [weekdayPattern]);
+  const mix = useMemo(() => computeMix(cc), [cc]);
+
+  return (
+    <div>
+      <TopBar login={u.login} />
+
+      <Hero u={u} />
+
+      <VitalsRow
+        currentStreak={currentStreak}
+        longestStreak={longestStreak}
+        consistency={consistency}
+        mostActiveWeekday={mostActiveWeekday}
+        mostActiveMonth={mostActiveMonth}
+      />
+
+      {u.yearlyContributions.length > 0 && (
+        <YearlyTimeline yearly={u.yearlyContributions} firstYear={u.firstContributionYear} />
+      )}
+
+      <HeatmapPanel cal={cal} />
+
+      <div className="grid md:grid-cols-2 border-t border-[#1c1c1c]">
+        <div className="py-12 md:pr-10">
+          <SectionLabel className="mb-6">Weekday rhythm · last 12 months</SectionLabel>
+          <WeekdayPanel data={weekdayPattern} />
+        </div>
+        <div className="py-12 md:pl-10 md:border-l md:border-[#1c1c1c] border-t border-[#1c1c1c] md:border-t-0">
+          <SectionLabel className="mb-6">Contribution mix · last 12 months</SectionLabel>
+          <ContributionMix mix={mix} />
+        </div>
+      </div>
+
+      <Section label="Top repos · last 12 months">
+        <TopRepos cc={cc} />
+      </Section>
+
+      <Section label="Languages · across owned repos">
+        <LanguagesPanel repos={u.repositories.nodes} />
+      </Section>
+
+      {u.pinnedItems.nodes.length > 0 && (
+        <Section label="Pinned">
+          <PinnedRepos pins={u.pinnedItems.nodes} />
+        </Section>
+      )}
+
+      <div className="mt-12 pt-6 text-[10px] text-[#555555] font-mono">
+        rate limit: {data.rateLimit.remaining}/{data.rateLimit.limit} · resets{" "}
+        {new Date(data.rateLimit.resetAt).toLocaleTimeString()}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Top bar
+// ──────────────────────────────────────────────────────────────
+
+function TopBar({ login }: { login: string }) {
+  return (
+    <div className="flex items-center justify-between py-5 border-b border-[#1c1c1c]">
+      <Link
+        href="/"
+        className="text-sm text-[#8a8a8a] hover:text-[#ededed] transition-colors flex items-center gap-1.5"
+      >
+        ← back
+      </Link>
+      <span
+        className="text-sm text-[#8a8a8a]"
+        style={{ fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace' }}
+      >
+        @{login}
+      </span>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Hero — full-bleed, 12-col split 7/5, serif statement number
+// ──────────────────────────────────────────────────────────────
+
+function Hero({ u }: { u: Stats["user"] }) {
   const joined = new Date(u.createdAt).toLocaleDateString("en-US", {
     month: "short",
     year: "numeric",
   });
+  const since = u.firstContributionYear ?? new Date(u.createdAt).getUTCFullYear();
+
   return (
-    <header className="flex flex-col sm:flex-row gap-6 items-start">
-      <img
-        src={u.avatarUrl}
-        alt={u.login}
-        className="w-24 h-24 rounded-full border border-zinc-800"
-      />
-      <div className="flex flex-col gap-2">
-        <div className="flex items-baseline gap-3">
-          <h1 className="text-2xl font-medium">{u.name || u.login}</h1>
+    <section className="grid grid-cols-1 md:grid-cols-12 gap-10 py-16">
+      <div className="md:col-span-7 flex flex-col gap-5">
+        <img
+          src={u.avatarUrl}
+          alt={u.login}
+          className="w-24 h-24 rounded-md border border-[#1c1c1c]"
+        />
+        <div>
+          <h1 className="text-3xl tracking-tight text-[#ededed]">{u.name || u.login}</h1>
           <a
             href={`https://github.com/${u.login}`}
             target="_blank"
             rel="noreferrer"
-            className="text-zinc-500 hover:text-zinc-300 text-sm"
+            className="text-[#8a8a8a] hover:text-[#ededed] text-sm transition-colors"
           >
             @{u.login}
           </a>
         </div>
-        {u.bio && <p className="text-zinc-300 max-w-2xl">{u.bio}</p>}
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-zinc-500 mt-1">
+        {u.bio && <p className="text-[#8a8a8a] text-sm max-w-xl leading-relaxed">{u.bio}</p>}
+        <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-[#555555]">
           {u.company && <span>{u.company}</span>}
           {u.location && <span>{u.location}</span>}
           {u.websiteUrl && (
-            <a href={u.websiteUrl} target="_blank" rel="noreferrer" className="hover:text-zinc-300">
+            <a
+              href={u.websiteUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="hover:text-[#ededed] transition-colors"
+            >
               {u.websiteUrl.replace(/^https?:\/\//, "")}
             </a>
           )}
           <span>Joined {joined}</span>
         </div>
-        <div className="flex gap-4 text-sm text-zinc-400 mt-1">
-          <span>
-            <b className="text-zinc-100">{u.followers.totalCount.toLocaleString()}</b> followers
-          </span>
-          <span>
-            <b className="text-zinc-100">{u.following.totalCount.toLocaleString()}</b> following
-          </span>
+        <div className="flex gap-8 mt-2">
+          <Stat value={u.followers.totalCount} label="followers" />
+          <Stat value={u.following.totalCount} label="following" />
+          <Stat value={u.repositories.totalCount} label="repos" />
         </div>
       </div>
-    </header>
+
+      <div className="md:col-span-5 flex flex-col justify-center md:items-end md:text-right">
+        <div
+          className="text-7xl md:text-8xl italic leading-none tabular-nums"
+          style={{ ...SERIF, color: ACCENT }}
+        >
+          {u.allTimeContributions.toLocaleString()}
+        </div>
+        <SectionLabel className="mt-4">contributions since {since}</SectionLabel>
+      </div>
+    </section>
   );
 }
 
-function StatCard({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
+function Stat({ value, label }: { value: number; label: string }) {
   return (
-    <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4">
-      <div className="text-xs text-zinc-500 uppercase tracking-wide">{label}</div>
-      <div className="text-2xl font-medium mt-1">{value}</div>
-      {sub && <div className="text-xs text-zinc-500 mt-1">{sub}</div>}
+    <div className="flex flex-col">
+      <span className="text-lg tabular-nums text-[#ededed]">{value.toLocaleString()}</span>
+      <span className="text-[10px] uppercase tracking-[0.18em] text-[#555555] mt-0.5">{label}</span>
     </div>
   );
 }
 
-function StatsGrid({ u }: { u: Stats["user"] }) {
-  const cc = u.contributionsCollection;
-  const since = u.firstContributionYear ?? new Date(u.createdAt).getUTCFullYear();
-  return (
-    <section className="flex flex-col gap-6">
-      <div className="bg-gradient-to-br from-emerald-950/40 to-zinc-900/40 border border-emerald-900/40 rounded-xl p-6">
-        <div className="text-xs text-emerald-400/70 uppercase tracking-wide">
-          All-time contributions
-        </div>
-        <div className="text-4xl font-medium mt-1 tabular-nums">
-          {u.allTimeContributions.toLocaleString()}
-        </div>
-        <div className="text-xs text-zinc-500 mt-1">since {since}</div>
-      </div>
+// ──────────────────────────────────────────────────────────────
+// Vitals strip — 5 equal cells split by vertical hairlines, no cards
+// ──────────────────────────────────────────────────────────────
 
-      <div>
-        <h2 className="text-sm uppercase tracking-wide text-zinc-500 mb-3">Last 12 months</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <StatCard label="Contributions" value={cc.contributionCalendar.totalContributions.toLocaleString()} />
-          <StatCard label="Commits" value={cc.totalCommitContributions.toLocaleString()} />
-          <StatCard label="Pull requests" value={cc.totalPullRequestContributions.toLocaleString()} />
-          <StatCard label="Issues" value={cc.totalIssueContributions.toLocaleString()} />
-          <StatCard label="Reviews" value={cc.totalPullRequestReviewContributions.toLocaleString()} />
-          <StatCard label="Repos created" value={cc.totalRepositoryContributions.toLocaleString()} />
-          <StatCard label="Private (hidden)" value={cc.restrictedContributionsCount.toLocaleString()} />
-          <StatCard label="Repos contributed to" value={u.repositoriesContributedTo.totalCount.toLocaleString()} sub="all time" />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="PRs merged" value={u.mergedPRs.totalCount.toLocaleString()} sub="all time" />
-        <StatCard label="PRs open" value={u.openPRs.totalCount.toLocaleString()} sub="all time" />
-        <StatCard label="PRs closed" value={u.closedPRs.totalCount.toLocaleString()} sub="all time" />
-        <StatCard label="Public repos" value={u.repositories.totalCount.toLocaleString()} sub="owned" />
-      </div>
-    </section>
-  );
-}
-
-function HeatmapSection({ cal }: { cal: Stats["user"]["contributionsCollection"]["contributionCalendar"] }) {
-  const level = (c: number) => {
-    if (c === 0) return 0;
-    if (c < 3) return 1;
-    if (c < 6) return 2;
-    if (c < 10) return 3;
-    return 4;
-  };
-  const colors = [
-    "bg-zinc-900",
-    "bg-emerald-900",
-    "bg-emerald-700",
-    "bg-emerald-500",
-    "bg-emerald-400",
+function VitalsRow({
+  currentStreak,
+  longestStreak,
+  consistency,
+  mostActiveWeekday,
+  mostActiveMonth,
+}: {
+  currentStreak: number;
+  longestStreak: number;
+  consistency: number;
+  mostActiveWeekday: { day: string; count: number };
+  mostActiveMonth: { label: string; count: number } | null;
+}) {
+  const cells = [
+    { label: "Current streak", value: `${currentStreak}`, sub: "days" },
+    { label: "Longest streak", value: `${longestStreak}`, sub: "days" },
+    { label: "Consistency", value: `${consistency.toFixed(0)}%`, sub: "active days · last yr" },
+    { label: "Peak weekday", value: mostActiveWeekday.day, sub: `${mostActiveWeekday.count} contribs` },
+    {
+      label: "Peak month",
+      value: mostActiveMonth?.label.split(" ")[0] ?? "—",
+      sub: mostActiveMonth ? `${mostActiveMonth.count} contribs` : undefined,
+    },
   ];
 
   return (
-    <section>
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-sm uppercase tracking-wide text-zinc-500">Contribution activity</h2>
-        <span className="text-xs text-zinc-500">
-          {cal.totalContributions.toLocaleString()} in the last year
-        </span>
-      </div>
-      <div className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-4 overflow-x-auto">
-        <div className="flex gap-[3px] min-w-fit">
-          {cal.weeks.map((w, i) => (
-            <div key={i} className="flex flex-col gap-[3px]">
-              {w.contributionDays.map((d) => (
-                <div
-                  key={d.date}
-                  className={`w-[11px] h-[11px] rounded-sm ${colors[level(d.contributionCount)]}`}
-                  title={`${d.contributionCount} contribution${d.contributionCount === 1 ? "" : "s"} on ${d.date}`}
-                />
-              ))}
-            </div>
-          ))}
+    <div className="grid grid-cols-2 md:grid-cols-5 border-t border-[#1c1c1c]">
+      {cells.map((c, i) => (
+        <div
+          key={c.label}
+          className={`py-8 px-6 ${i % 5 === 0 ? "" : "border-l border-[#1c1c1c]"} md:[&:nth-child(1)]:pl-0`}
+        >
+          <SectionLabel>{c.label}</SectionLabel>
+          <div
+            className="text-4xl mt-3 tabular-nums text-[#ededed]"
+            style={SERIF}
+          >
+            {c.value}
+          </div>
+          {c.sub && <div className="text-[11px] text-[#555555] mt-1.5">{c.sub}</div>}
         </div>
-        <div className="flex items-center gap-2 mt-3 text-xs text-zinc-500">
-          <span>less</span>
-          {colors.map((c, i) => (
-            <div key={i} className={`w-[11px] h-[11px] rounded-sm ${c}`} />
-          ))}
-          <span>more</span>
-        </div>
-      </div>
-    </section>
+      ))}
+    </div>
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// Yearly timeline — area chart, lime stroke + fade fill
+// ──────────────────────────────────────────────────────────────
+
+function YearlyTimeline({
+  yearly,
+  firstYear,
+}: {
+  yearly: { year: number; count: number }[];
+  firstYear: number | null;
+}) {
+  const startIdx = firstYear ? Math.max(0, yearly.findIndex((y) => y.year === firstYear)) : 0;
+  const trimmed = yearly.slice(startIdx);
+
+  return (
+    <Section label="Contributions by year">
+      <div className="h-56">
+        <ResponsiveContainer width="100%" height="100%">
+          <AreaChart data={trimmed} margin={{ top: 10, right: 0, left: 0, bottom: 0 }}>
+            <defs>
+              <linearGradient id="yearGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={ACCENT} stopOpacity={0.4} />
+                <stop offset="100%" stopColor={ACCENT} stopOpacity={0} />
+              </linearGradient>
+            </defs>
+            <CartesianGrid stroke="#1c1c1c" vertical={false} />
+            <XAxis
+              dataKey="year"
+              stroke="#2a2a2a"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              tick={{ fill: "#555555" }}
+            />
+            <YAxis
+              stroke="#2a2a2a"
+              fontSize={11}
+              tickLine={false}
+              axisLine={false}
+              width={40}
+              tick={{ fill: "#555555" }}
+            />
+            <Tooltip
+              cursor={{ stroke: "#2a2a2a" }}
+              contentStyle={{
+                background: "#0a0a0a",
+                border: "1px solid #1c1c1c",
+                borderRadius: 0,
+                fontSize: 11,
+                color: "#ededed",
+              }}
+              labelStyle={{ color: "#8a8a8a" }}
+              itemStyle={{ color: ACCENT }}
+            />
+            <Area type="monotone" dataKey="count" stroke={ACCENT} strokeWidth={2} fill="url(#yearGrad)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </div>
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Heatmap — flat squares, monochrome→lime scale, user-max calibration
+// ──────────────────────────────────────────────────────────────
+
+function HeatmapPanel({
+  cal,
+}: {
+  cal: Stats["user"]["contributionsCollection"]["contributionCalendar"];
+}) {
+  const max = useMemo(() => {
+    let m = 0;
+    for (const w of cal.weeks)
+      for (const d of w.contributionDays) if (d.contributionCount > m) m = d.contributionCount;
+    return m;
+  }, [cal.weeks]);
+
+  const level = (c: number) => {
+    if (c === 0) return 0;
+    const r = c / max;
+    if (r < 0.15) return 1;
+    if (r < 0.4) return 2;
+    if (r < 0.7) return 3;
+    return 4;
+  };
+
+  const monthLabels: { idx: number; label: string }[] = [];
+  let lastMonth = -1;
+  cal.weeks.forEach((w, i) => {
+    const first = w.contributionDays[0];
+    if (!first) return;
+    const m = new Date(first.date).getUTCMonth();
+    if (m !== lastMonth) {
+      monthLabels.push({
+        idx: i,
+        label: new Date(first.date).toLocaleString("en-US", { month: "short" }),
+      });
+      lastMonth = m;
+    }
+  });
+
+  return (
+    <Section
+      label={
+        <div className="flex items-baseline justify-between">
+          <span>Activity · last 12 months</span>
+          <span className="text-[#555555] tabular-nums">
+            {cal.totalContributions.toLocaleString()} contributions
+          </span>
+        </div>
+      }
+    >
+      <div className="overflow-x-auto">
+        <div className="inline-block min-w-fit">
+          <div className="flex gap-[2px] mb-1.5 pl-[28px] text-[10px] uppercase tracking-[0.18em] text-[#555555]">
+            {cal.weeks.map((_, i) => {
+              const label = monthLabels.find((m) => m.idx === i);
+              return (
+                <div key={i} className="w-[12px] text-left">
+                  {label?.label}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-[2px]">
+            <div className="flex flex-col gap-[2px] text-[10px] uppercase tracking-[0.18em] text-[#555555] pr-2">
+              <div className="h-[12px]" />
+              <div className="h-[12px] leading-[12px]">Mon</div>
+              <div className="h-[12px]" />
+              <div className="h-[12px] leading-[12px]">Wed</div>
+              <div className="h-[12px]" />
+              <div className="h-[12px] leading-[12px]">Fri</div>
+              <div className="h-[12px]" />
+            </div>
+            <div className="flex gap-[2px]">
+              {cal.weeks.map((w, i) => (
+                <div key={i} className="flex flex-col gap-[2px]">
+                  {w.contributionDays.map((d) => (
+                    <div
+                      key={d.date}
+                      className="w-[12px] h-[12px] rounded-none hover:ring-1 hover:ring-[#8a8a8a] transition-all"
+                      style={{ backgroundColor: HEAT[level(d.contributionCount)] }}
+                      title={`${d.contributionCount} on ${d.date}`}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2 mt-5 text-[10px] uppercase tracking-[0.18em] text-[#555555]">
+        <span>Less</span>
+        {HEAT.map((c, l) => (
+          <div key={l} className="w-[12px] h-[12px] rounded-none" style={{ backgroundColor: c }} />
+        ))}
+        <span>More</span>
+        <span className="ml-auto normal-case tracking-normal">
+          calibrated to your peak day ({max})
+        </span>
+      </div>
+    </Section>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Weekday pattern — solid lime bars, faint grid
+// ──────────────────────────────────────────────────────────────
+
+function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
+  const max = Math.max(...data.map((d) => d.count), 1);
+  return (
+    <div className="h-56">
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
+          <CartesianGrid stroke="#1c1c1c" vertical={false} />
+          <XAxis
+            dataKey="day"
+            stroke="#2a2a2a"
+            fontSize={11}
+            tickLine={false}
+            axisLine={false}
+            tick={{ fill: "#555555" }}
+          />
+          <YAxis stroke="#2a2a2a" fontSize={11} tickLine={false} axisLine={false} tick={{ fill: "#555555" }} />
+          <Tooltip
+            cursor={{ fill: "#111111" }}
+            contentStyle={{
+              background: "#0a0a0a",
+              border: "1px solid #1c1c1c",
+              borderRadius: 0,
+              fontSize: 11,
+              color: "#ededed",
+            }}
+            labelStyle={{ color: "#8a8a8a" }}
+            itemStyle={{ color: ACCENT }}
+          />
+          <Bar dataKey="count">
+            {data.map((d, i) => (
+              <Cell key={i} fill={ACCENT} fillOpacity={0.35 + 0.65 * (d.count / max)} />
+            ))}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Contribution mix — serif total + segmented bar + stacked legend
+// ──────────────────────────────────────────────────────────────
+
+function ContributionMix({ mix }: { mix: ReturnType<typeof computeMix> }) {
+  if (mix.total === 0) {
+    return <div className="text-[#555555] text-sm">No contributions found.</div>;
+  }
+  return (
+    <div>
+      <div className="text-4xl tabular-nums text-[#ededed]" style={SERIF}>
+        {mix.total.toLocaleString()}
+      </div>
+      <div className="flex h-2 rounded-sm overflow-hidden mt-5 mb-6 bg-[#161616]">
+        {mix.rows.map((r) =>
+          r.percent > 0 ? (
+            <div
+              key={r.name}
+              style={{ width: `${r.percent}%`, backgroundColor: r.color }}
+              title={`${r.name} ${r.percent.toFixed(1)}%`}
+            />
+          ) : null
+        )}
+      </div>
+      <div className="flex flex-col gap-2.5">
+        {mix.rows.map((r) => (
+          <div key={r.name} className="flex items-center gap-2.5 text-sm">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+            <span className="text-[#ededed]">{r.name}</span>
+            <span className="text-[#555555] tabular-nums">{r.count.toLocaleString()}</span>
+            <span className="text-[#8a8a8a] tabular-nums ml-auto">{r.percent.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────
+// Top repos — numbered leaderboard, serif ranks, progress bars
+// ──────────────────────────────────────────────────────────────
+
 function TopRepos({ cc }: { cc: Stats["user"]["contributionsCollection"] }) {
-  // Merge all contribution types per repo
   const map = new Map<
     string,
     { url: string; commits: number; prs: number; issues: number; reviews: number; total: number }
   >();
   const ensure = (key: string, url: string) => {
-    if (!map.has(key))
-      map.set(key, { url, commits: 0, prs: 0, issues: 0, reviews: 0, total: 0 });
+    if (!map.has(key)) map.set(key, { url, commits: 0, prs: 0, issues: 0, reviews: 0, total: 0 });
     return map.get(key)!;
   };
   for (const c of cc.commitContributionsByRepository) {
@@ -359,38 +824,61 @@ function TopRepos({ cc }: { cc: Stats["user"]["contributionsCollection"] }) {
     .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => b.total - a.total)
     .slice(0, 10);
+  const max = rows[0]?.total ?? 1;
+
+  if (rows.length === 0) {
+    return <div className="text-[#555555] text-sm">No contributions found.</div>;
+  }
 
   return (
-    <section className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-5">
-      <h2 className="text-sm uppercase tracking-wide text-zinc-500 mb-4">
-        Top repos · last 12 months
-      </h2>
-      <div className="flex flex-col gap-3">
-        {rows.length === 0 && <div className="text-zinc-500 text-sm">No contributions found.</div>}
-        {rows.map((r) => (
+    <div>
+      {rows.map((r, i) => {
+        const breakdown = [
+          r.commits > 0 ? `${r.commits} commits` : null,
+          r.prs > 0 ? `${r.prs} PRs` : null,
+          r.issues > 0 ? `${r.issues} issues` : null,
+          r.reviews > 0 ? `${r.reviews} reviews` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+        return (
           <a
             key={r.name}
             href={r.url}
             target="_blank"
             rel="noreferrer"
-            className="block group"
+            className="block group border-t border-[#1c1c1c] py-3 first:border-t-0"
           >
-            <div className="flex items-baseline justify-between gap-2">
-              <span className="text-sm text-zinc-200 group-hover:text-white truncate">{r.name}</span>
-              <span className="text-sm text-zinc-100 tabular-nums">{r.total}</span>
+            <div className="flex items-baseline gap-4">
+              <span
+                className="text-2xl tabular-nums w-10 shrink-0"
+                style={{ ...SERIF, color: i < 3 ? ACCENT : "#555555" }}
+              >
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-[#ededed] group-hover:text-white truncate transition-colors">
+                  {r.name}
+                </div>
+                <div className="text-[11px] text-[#555555] mt-0.5">{breakdown}</div>
+              </div>
+              <span className="text-2xl tabular-nums text-[#ededed] shrink-0" style={SERIF}>
+                {r.total}
+              </span>
             </div>
-            <div className="flex gap-3 text-xs text-zinc-500 mt-0.5">
-              {r.commits > 0 && <span>{r.commits} commits</span>}
-              {r.prs > 0 && <span>{r.prs} PRs</span>}
-              {r.issues > 0 && <span>{r.issues} issues</span>}
-              {r.reviews > 0 && <span>{r.reviews} reviews</span>}
+            <div className="mt-2 h-px bg-[#1c1c1c] overflow-hidden">
+              <div className="h-full" style={{ width: `${(r.total / max) * 100}%`, backgroundColor: ACCENT }} />
             </div>
           </a>
-        ))}
-      </div>
-    </section>
+        );
+      })}
+    </div>
   );
 }
+
+// ──────────────────────────────────────────────────────────────
+// Languages — segmented bar (real colors) + inline wrap legend
+// ──────────────────────────────────────────────────────────────
 
 function LanguagesPanel({ repos }: { repos: Stats["user"]["repositories"]["nodes"] }) {
   const map = new Map<string, { size: number; color: string }>();
@@ -408,58 +896,49 @@ function LanguagesPanel({ repos }: { repos: Stats["user"]["repositories"]["nodes
     .sort((a, b) => b.percent - a.percent)
     .slice(0, 8);
 
+  if (total === 0) {
+    return <div className="text-[#555555] text-sm">No language data.</div>;
+  }
+
   return (
-    <section className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-5">
-      <h2 className="text-sm uppercase tracking-wide text-zinc-500 mb-4">Languages · owned repos</h2>
-      {total === 0 ? (
-        <div className="text-zinc-500 text-sm">No language data.</div>
-      ) : (
-        <>
-          <div className="flex h-2 rounded-full overflow-hidden mb-4 bg-zinc-800">
-            {rows.map((r) => (
-              <div
-                key={r.name}
-                style={{ width: `${r.percent}%`, backgroundColor: r.color }}
-                title={`${r.name} ${r.percent.toFixed(1)}%`}
-              />
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
-            {rows.map((r) => (
-              <div key={r.name} className="flex items-center gap-2">
-                <span
-                  className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: r.color }}
-                />
-                <span className="text-zinc-300 truncate">{r.name}</span>
-                <span className="text-zinc-500 tabular-nums ml-auto">{r.percent.toFixed(1)}%</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-    </section>
+    <div>
+      <div className="flex h-2 rounded-sm overflow-hidden mb-5 bg-[#161616]">
+        {rows.map((r) => (
+          <div
+            key={r.name}
+            style={{ width: `${r.percent}%`, backgroundColor: r.color }}
+            title={`${r.name} ${r.percent.toFixed(1)}%`}
+          />
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
+        {rows.map((r) => (
+          <span key={r.name} className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: r.color }} />
+            <span className="text-[#8a8a8a]">{r.name}</span>
+            <span className="text-[#555555] tabular-nums">{r.percent.toFixed(1)}%</span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
+// ──────────────────────────────────────────────────────────────
+// Pinned — flat bordered tiles
+// ──────────────────────────────────────────────────────────────
+
 function PinnedRepos({ pins }: { pins: Stats["user"]["pinnedItems"]["nodes"] }) {
   return (
-    <section>
-      <h2 className="text-sm uppercase tracking-wide text-zinc-500 mb-3">Pinned</h2>
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-        {pins.map((p) => (
-          <a
-            key={p.nameWithOwner}
-            href={p.url}
-            target="_blank"
-            rel="noreferrer"
-            className="bg-zinc-900/30 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors flex flex-col gap-2"
-          >
-            <div className="text-sm text-zinc-200 font-medium truncate">{p.name}</div>
+    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+      {pins.map((p) => (
+        <a key={p.nameWithOwner} href={p.url} target="_blank" rel="noreferrer" className="block">
+          <div className="border border-[#1c1c1c] rounded-md p-5 h-full flex flex-col gap-2 hover:border-[#2a2a2a] transition-colors">
+            <div className="text-sm text-zinc-100 font-medium truncate">{p.name}</div>
             {p.description && (
-              <p className="text-xs text-zinc-500 line-clamp-2">{p.description}</p>
+              <p className="text-xs text-[#8a8a8a] line-clamp-2 leading-relaxed">{p.description}</p>
             )}
-            <div className="flex gap-3 text-xs text-zinc-500 mt-auto pt-2">
+            <div className="flex gap-3 text-[10px] text-[#555555] mt-auto pt-2">
               {p.primaryLanguage && (
                 <span className="flex items-center gap-1.5">
                   <span
@@ -472,9 +951,9 @@ function PinnedRepos({ pins }: { pins: Stats["user"]["pinnedItems"]["nodes"] }) 
               <span>★ {p.stargazerCount}</span>
               <span>⑂ {p.forkCount}</span>
             </div>
-          </a>
-        ))}
-      </div>
-    </section>
+          </div>
+        </a>
+      ))}
+    </div>
   );
 }
