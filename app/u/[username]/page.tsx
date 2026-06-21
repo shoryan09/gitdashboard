@@ -16,9 +16,6 @@ import {
   YAxis,
 } from "recharts";
 
-// ──────────────────────────────────────────────────────────────
-// Types (unchanged)
-// ──────────────────────────────────────────────────────────────
 
 type Lang = { name: string; color: string };
 type RepoRef = {
@@ -96,10 +93,6 @@ type Stats = {
 };
 
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-
-// ──────────────────────────────────────────────────────────────
-// Monochrome theme tokens
-// ──────────────────────────────────────────────────────────────
 
 const ACCENT = "#d4ff00";
 const SERIF = { fontFamily: "var(--font-serif)" } as const;
