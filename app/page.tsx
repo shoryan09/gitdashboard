@@ -3,10 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-// ──────────────────────────────────────────────────────────────
-// Monochrome editorial landing — flat #0a0a0a, single lime accent
-// ──────────────────────────────────────────────────────────────
-
 const ACCENT = "#d4ff00";
 
 export default function Home() {
