@@ -101,10 +101,6 @@ const HEAT = ["#161616", "#2a2a2a", "#4a4a4a", "#a8d000", "#d4ff00"];
 // monochrome-friendly mix palette (lime → grey ramp)
 const MIX_COLORS = ["#d4ff00", "#8a8a8a", "#555555", "#2a2a2a"];
 
-// ──────────────────────────────────────────────────────────────
-// Derived insight helpers (unchanged logic)
-// ──────────────────────────────────────────────────────────────
-
 function computeStreaks(weeks: Week[]) {
   const days = weeks.flatMap((w) => w.contributionDays);
   let longest = 0;
