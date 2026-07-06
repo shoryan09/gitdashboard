@@ -177,10 +177,6 @@ function computeMix(cc: Stats["user"]["contributionsCollection"]) {
   };
 }
 
-// ──────────────────────────────────────────────────────────────
-// Page
-// ──────────────────────────────────────────────────────────────
-
 export default function StatsPage() {
   const params = useParams<{ username: string }>();
   const [data, setData] = useState<Stats | null>(null);
