@@ -255,7 +255,6 @@ function Spinner() {
 }
 
 // ──────────────────────────────────────────────────────────────
-// Shell — flat #0a0a0a canvas
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
