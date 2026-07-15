@@ -263,7 +263,6 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 // Primitives
-// ──────────────────────────────────────────────────────────────
 
 function SectionLabel({
   children,
