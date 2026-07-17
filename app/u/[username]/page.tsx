@@ -293,7 +293,6 @@ function Section({
 }
 
 // ──────────────────────────────────────────────────────────────
-// Dashboard
 
 function Dashboard({ data }: { data: Stats }) {
   const u = data.user;
