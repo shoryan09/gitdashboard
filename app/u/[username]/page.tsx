@@ -292,8 +292,6 @@ function Section({
   );
 }
 
-//
-
 function Dashboard({ data }: { data: Stats }) {
   const u = data.user;
   const cc = u.contributionsCollection;
