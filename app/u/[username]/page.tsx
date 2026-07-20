@@ -364,8 +364,6 @@ function Dashboard({ data }: { data: Stats }) {
   );
 }
 
-// Top bar
-
 
 function TopBar({ login }: { login: string }) {
   return (
