@@ -457,7 +457,6 @@ function Stat({ value, label }: { value: number; label: string }) {
 
 // ──────────────────────────────────────────────────────────────
 // Vitals strip — 5 equal cells split by vertical hairlines, no cards
-// ──────────────────────────────────────────────────────────────
 
 function VitalsRow({
   currentStreak,
