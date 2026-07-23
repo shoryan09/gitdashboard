@@ -384,8 +384,6 @@ function TopBar({ login }: { login: string }) {
   );
 }
 
-// Hero — full-bleed, 12-col split 7/5, serif statement number
-
 function Hero({ u }: { u: Stats["user"] }) {
   const joined = new Date(u.createdAt).toLocaleDateString("en-US", {
     month: "short",
