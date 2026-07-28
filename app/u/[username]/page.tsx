@@ -503,7 +503,6 @@ function VitalsRow({
 }
 
 // Yearly timeline — area chart, lime stroke + fade fill
-// ──────────────────────────────────────────────────────────────
 
 function YearlyTimeline({
   yearly,
