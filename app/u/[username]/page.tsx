@@ -560,8 +560,6 @@ function YearlyTimeline({
   );
 }
 
-// Heatmap — flat squares, monochrome→lime scale, user-max calibration
-
 function HeatmapPanel({
   cal,
 }: {
