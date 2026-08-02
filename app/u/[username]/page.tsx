@@ -703,7 +703,6 @@ function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────
 // Contribution mix — serif total + segmented bar + stacked legend
 // ──────────────────────────────────────────────────────────────
 
