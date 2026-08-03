@@ -662,7 +662,6 @@ function HeatmapPanel({
 
 // ──────────────────────────────────────────────────────────────
 // Weekday pattern — solid lime bars, faint grid
-// ──────────────────────────────────────────────────────────────
 
 function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
   const max = Math.max(...data.map((d) => d.count), 1);
