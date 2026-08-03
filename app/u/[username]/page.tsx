@@ -660,7 +660,6 @@ function HeatmapPanel({
   );
 }
 
-// ──────────────────────────────────────────────────────────────
 // Weekday pattern — solid lime bars, faint grid
 
 function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
