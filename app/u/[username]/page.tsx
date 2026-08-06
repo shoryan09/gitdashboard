@@ -698,8 +698,6 @@ function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
   );
 }
 
-// ──────────────────────────────────────────────────────────────
-
 function ContributionMix({ mix }: { mix: ReturnType<typeof computeMix> }) {
   if (mix.total === 0) {
     return <div className="text-[#555555] text-sm">No contributions found.</div>;
