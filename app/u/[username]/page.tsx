@@ -698,7 +698,7 @@ function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
   );
 }
 
-// Contribution mix — serif total + segmented bar + stacked legend
+// Contribution mix — serif total + segmented bar + stacked legen
 // ──────────────────────────────────────────────────────────────
 
 function ContributionMix({ mix }: { mix: ReturnType<typeof computeMix> }) {
