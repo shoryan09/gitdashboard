@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 const GITHUB_API = "https://api.github.com/graphql";
 
-const QUERY = /* GraphQL */ `
+const QUERY = `
   query UserStats($login: String!) {
     rateLimit {
       limit
