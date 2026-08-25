@@ -271,7 +271,6 @@ export async function GET(
       }
     } catch (e) {
       console.error("[gh-stats] all-time fetch failed:", e);
-      // Soft-fail: return base data with zeros if the second call breaks
     }
 
     json.data.user.allTimeContributions = allTimeContributions;
