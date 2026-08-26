@@ -241,7 +241,6 @@ export async function GET(
       return NextResponse.json({ error: json.errors[0].message }, { status: 400 });
     }
 
-    // at 1 year per call), aliased into a single 
     const GITHUB_FOUNDED = 2008;
     const startYear = GITHUB_FOUNDED;
     const currentYear = new Date().getUTCFullYear();
