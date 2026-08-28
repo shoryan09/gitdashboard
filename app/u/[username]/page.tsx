@@ -658,7 +658,7 @@ function HeatmapPanel({
     </Section>
   );
 }
-//
+
 function WeekdayPanel({ data }: { data: { day: string; count: number }[] }) {
   const max = Math.max(...data.map((d) => d.count), 1);
   return (
