@@ -869,7 +869,7 @@ function LanguagesPanel({ repos }: { repos: Stats["user"]["repositories"]["nodes
   );
 }
 
-// ──────────────────────────────────────────────────────────────
+
 // Pinned — flat bordered tiles
 // ──────────────────────────────────────────────────────────────
 
