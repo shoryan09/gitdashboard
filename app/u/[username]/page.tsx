@@ -870,7 +870,6 @@ function LanguagesPanel({ repos }: { repos: Stats["user"]["repositories"]["nodes
 }
 
 // Pinned — flat bordered tiles
-// ──────────────────────────────────────────────────────────────
 
 function PinnedRepos({ pins }: { pins: Stats["user"]["pinnedItems"]["nodes"] }) {
   return (
